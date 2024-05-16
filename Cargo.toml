@@ -1,0 +1,22 @@
+[package]
+name = "targeted-bulk"
+version = "0.1.0"
+edition = "2021"
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+readme = "README.md"
+
+[dependencies]
+rayon = "1.10.0"
+
+[lints.clippy]
+complexity = "deny"
+
+nursery = { level = "deny", priority = -1 }
+
+pedantic = "deny"
+perf = "deny"
+style = "deny"
+suspicious = "deny"
+
+[dev-dependencies]
+fastrand = "2.1.0"
