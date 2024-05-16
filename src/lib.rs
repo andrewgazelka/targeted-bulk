@@ -57,6 +57,8 @@ impl<E> TargetedBulk<E> {
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use proptest::{prelude::prop, proptest};
+
     use super::*;
 
     #[test]
@@ -113,35 +115,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_random_push_and_drain() {
-        fastrand::seed(42);
-        for i in 0..100 {
-            let data: Vec<_> = (0..i)
-                .map(|_| (fastrand::u64(..), fastrand::u64(..)))
-                .collect();
-            test_random_push_and_drain_iter(&data);
-        }
-    }
+    proptest! {
+        #[test]
+        fn test_random_push_and_drain(
+            a in prop::collection::vec(0u64..1000, 1..100),
+            b in prop::collection::vec(0u64..1000, 1..100)
+        ) {
+           let data = a.into_iter().zip(b.into_iter()).collect::<Vec<_>>();
 
-    fn test_random_push_and_drain_iter(data: &[(u64, u64)]) {
-        let mut bulk = TargetedBulk::new();
-        for (t, d) in data {
-            bulk.push(*t, *d);
-        }
+            let mut bulk = TargetedBulk::new();
+            for (t, d) in &data {
+                bulk.push(*t, *d);
+            }
 
-        let results = Arc::new(Mutex::new(Vec::new()));
-        let results_clone = Arc::clone(&results);
+            let results = Arc::new(Mutex::new(Vec::new()));
+            let results_clone = Arc::clone(&results);
 
-        bulk.drain_par(|target, data| {
-            let mut results = results_clone.lock().unwrap();
-            results.push((target, data));
-        });
+            bulk.drain_par(|target, data| {
+                let mut results = results_clone.lock().unwrap();
+                results.push((target, data));
+            });
 
-        let results = results.lock().unwrap();
-        assert_eq!(results.len(), data.len());
-        for (t, d) in data {
-            assert!(results.contains(&(*t, *d)));
+            let results = results.lock().unwrap();
+            assert_eq!(results.len(), data.len());
+            for (t, d) in &data {
+                assert!(results.contains(&(*t, *d)));
+            }
         }
     }
 }

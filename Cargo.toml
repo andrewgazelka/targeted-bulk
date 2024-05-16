@@ -20,3 +20,4 @@ suspicious = "deny"
 
 [dev-dependencies]
 fastrand = "2.1.0"
+proptest = "1.4.0"
