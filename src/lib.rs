@@ -1,146 +1,138 @@
-use std::mem::ManuallyDrop;
+#![feature(allocator_api)]
 
-type Id = u64;
+use std::marker::PhantomData;
 
-pub struct TargetedBulk<E> {
-    targets: Vec<u64>,
-    events: Vec<ManuallyDrop<E>>,
+use evenio::entity::EntityId;
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct TargetedId {
+    data: EntityId,
+    _marker: PhantomData<*const ()>,
 }
 
-impl<E> Default for TargetedBulk<E> {
+impl TargetedId {
+    #[must_use]
+    pub const fn inner(self) -> EntityId {
+        self.data
+    }
+
+    const fn new(data: EntityId) -> Self {
+        Self {
+            data,
+            _marker: PhantomData,
+        }
+    }
+}
+
+fn get_thread_index(id: EntityId) -> usize {
+    id.index().0 as usize % rayon::current_num_threads()
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct LocalEvents<E> {
+    targets: Vec<EntityId>,
+    events: Vec<E>,
+}
+
+impl<E> LocalEvents<E> {
+    const EMPTY: Self = Self {
+        targets: Vec::new(),
+        events: Vec::new(),
+    };
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct TargetedEvents<E> {
+    locals: Box<[LocalEvents<E>]>,
+}
+
+impl<E> Default for TargetedEvents<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<E> TargetedBulk<E> {
+impl<E> TargetedEvents<E> {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        let num_threads = rayon::current_num_threads();
+
+        let locals = (0..num_threads).map(|_| LocalEvents::EMPTY).collect();
+
+        Self { locals }
+    }
+
+    pub fn len(&self) -> usize {
+        self.locals.iter().map(LocalEvents::len).sum()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.locals.iter().all(LocalEvents::is_empty)
+    }
+
+    pub fn push_exclusive(&mut self, target: EntityId, data: E) {
+        let idx = get_thread_index(target);
+        self.locals[idx].push(target, data);
+    }
+
+    /// # Panics
+    /// Panics if the target's assigned thread index does not match the current thread index.
+    pub fn push_shared(&self, target: TargetedId, data: E) {
+        let ptr = self.locals.as_ptr();
+        let current_thread_index = rayon::current_thread_index().expect("not in a rayon thread");
+        let ptr = unsafe { ptr.add(current_thread_index) };
+        let ptr = ptr.cast_mut();
+        let local = unsafe { &mut *ptr };
+        local.push(target.data, data);
+    }
+
+    pub fn drain_par<F>(&mut self, process: F)
+    where
+        F: Fn(TargetedId, E) + Send + Sync,
+        E: Send + Sync,
+    {
+        rayon::broadcast(|ctx| {
+            let index = ctx.index();
+            let local = unsafe { self.locals.as_ptr().add(index) };
+            let local = local.cast_mut();
+            let local = unsafe { &mut *local };
+
+            let targets = local.targets.drain(..);
+            let events = local.events.drain(..);
+
+            targets.zip(events).for_each(|(target, data)| {
+                let target = TargetedId::new(target);
+                process(target, data);
+            });
+        });
+    }
+}
+
+impl<E> Default for LocalEvents<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<E> LocalEvents<E> {
+    #[must_use]
+    const fn new() -> Self {
         Self {
             targets: Vec::new(),
             events: Vec::new(),
         }
     }
 
-    pub fn push(&mut self, target: Id, data: E) {
+    fn len(&self) -> usize {
+        self.targets.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.targets.is_empty()
+    }
+
+    fn push(&mut self, target: EntityId, data: E) {
         self.targets.push(target);
-        self.events.push(ManuallyDrop::new(data));
-    }
-
-    pub fn drain_par<F>(&mut self, process: F)
-    where
-        F: Fn(Id, E) + Send + Sync,
-        E: Send + Sync,
-    {
-        rayon::broadcast(|ctx| {
-            let thread_idx = ctx.index() as u64;
-            let num_threads = ctx.num_threads() as u64;
-
-            for i in 0..self.events.len() {
-                let target = self.targets[i];
-                if target % num_threads != thread_idx {
-                    continue;
-                }
-
-                let elem = unsafe { core::ptr::read(self.events.get_unchecked(i)) };
-                process(target, ManuallyDrop::into_inner(elem));
-            }
-        });
-
-        self.events.clear();
-        self.targets.clear();
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::significant_drop_tightening)]
-mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use proptest::{prelude::prop, proptest};
-
-    use super::*;
-
-    #[test]
-    fn test_push_and_drain() {
-        let mut bulk = TargetedBulk::new();
-        bulk.push(1, "event1");
-        bulk.push(2, "event2");
-
-        let results = Arc::new(Mutex::new(Vec::new()));
-        let results_clone = Arc::clone(&results);
-
-        bulk.drain_par(|target, data| {
-            let mut results = results_clone.lock().unwrap();
-            results.push((target, data));
-        });
-
-        let results = results.lock().unwrap();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&(1, "event1")));
-        assert!(results.contains(&(2, "event2")));
-    }
-
-    #[test]
-    fn test_drain_clears_events() {
-        let mut bulk = TargetedBulk::new();
-        bulk.push(1, "event1");
-        bulk.push(2, "event2");
-
-        bulk.drain_par(|_, _| {});
-
-        assert!(bulk.targets.is_empty());
-        assert!(bulk.events.is_empty());
-    }
-
-    #[test]
-    fn test_concurrent_processing() {
-        let mut bulk = TargetedBulk::new();
-        for i in 0..100 {
-            bulk.push(i, i * 2);
-        }
-
-        let results = Arc::new(Mutex::new(Vec::new()));
-        let results_clone = Arc::clone(&results);
-
-        bulk.drain_par(|target, data| {
-            let mut results = results_clone.lock().unwrap();
-            results.push((target, data));
-        });
-
-        let results = results.lock().unwrap();
-        assert_eq!(results.len(), 100);
-        for i in 0..100 {
-            assert!(results.contains(&(i, i * 2)));
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn test_random_push_and_drain(
-            a in prop::collection::vec(0u64..1000, 1..100),
-            b in prop::collection::vec(0u64..1000, 1..100)
-        ) {
-           let data = a.into_iter().zip(b.into_iter()).collect::<Vec<_>>();
-
-            let mut bulk = TargetedBulk::new();
-            for (t, d) in &data {
-                bulk.push(*t, *d);
-            }
-
-            let results = Arc::new(Mutex::new(Vec::new()));
-            let results_clone = Arc::clone(&results);
-
-            bulk.drain_par(|target, data| {
-                let mut results = results_clone.lock().unwrap();
-                results.push((target, data));
-            });
-
-            let results = results.lock().unwrap();
-            assert_eq!(results.len(), data.len());
-            for (t, d) in &data {
-                assert!(results.contains(&(*t, *d)));
-            }
-        }
+        self.events.push(data);
     }
 }

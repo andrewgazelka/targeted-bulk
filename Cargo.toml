@@ -6,6 +6,7 @@ authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 readme = "README.md"
 
 [dependencies]
+evenio = "0.6.0"
 rayon = "1.10.0"
 
 [lints.clippy]
