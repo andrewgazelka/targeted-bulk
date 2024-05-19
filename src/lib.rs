@@ -7,6 +7,7 @@ use evenio::entity::EntityId;
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct TargetedId {
     data: EntityId,
+    /// So [`TargetedId`] is not [`Send`] nor [`Sync`].
     _marker: PhantomData<*const ()>,
 }
 

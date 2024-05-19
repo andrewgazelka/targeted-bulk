@@ -13,7 +13,7 @@ fn full() {
     }
 
     events1.drain_par(|target, data| {
-        events2.push_shared(target, data * data);
+        events2.push_shared(target, format!("I love {data}"));
     });
 
     println!("{:#?}", events2);
