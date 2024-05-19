@@ -7,6 +7,8 @@ use evenio::{
     event::{GlobalEvent, Receiver},
     world::World,
 };
+use evenio::component::ComponentDescriptor;
+use evenio::mutability::Mutability;
 use targeted_bulk::{
     handler::{TargetedReader, TargetedWriter},
     TargetedEvents,
@@ -109,3 +111,4 @@ fn handler2(_: Receiver<Call>, mut reader: TargetedReader<ShoutEvent, &Age>) {
         println!("{to_shout} is {age}");
     });
 }
+

@@ -6,6 +6,7 @@ authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 readme = "README.md"
 
 [dependencies]
+derive_more = "0.99.17"
 evenio = "0.6.0"
 rayon = "1.10.0"
 

@@ -8,6 +8,7 @@ use std::{
 use evenio::{component::Component, entity::EntityId};
 
 pub mod handler;
+pub mod component;
 
 #[derive(PartialEq, Eq, Copy, Clone)]
 pub struct TargetedId {
