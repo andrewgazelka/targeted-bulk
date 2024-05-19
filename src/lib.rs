@@ -1,14 +1,25 @@
 #![feature(allocator_api)]
 
-use std::marker::PhantomData;
+use std::{
+    fmt::{Debug, Formatter},
+    marker::PhantomData,
+};
 
-use evenio::entity::EntityId;
+use evenio::{component::Component, entity::EntityId};
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub mod handler;
+
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub struct TargetedId {
     data: EntityId,
     /// So [`TargetedId`] is not [`Send`] nor [`Sync`].
     _marker: PhantomData<*const ()>,
+}
+
+impl Debug for TargetedId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("TargetedId").field(&self.data).finish()
+    }
 }
 
 impl TargetedId {
@@ -42,7 +53,7 @@ impl<E> LocalEvents<E> {
     };
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Component)]
 pub struct TargetedEvents<E> {
     locals: Box<[LocalEvents<E>]>,
 }
