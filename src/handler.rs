@@ -37,3 +37,18 @@ impl<'a, E: 'static, Q: Query + 'static> TargetedReader<'a, E, Q> {
         });
     }
 }
+
+#[derive(HandlerParam)]
+pub struct TargetedWriter<'a, E: 'static> {
+    events: Single<'a, &'static mut TargetedEvents<E>>,
+}
+
+impl<'a, E: 'static> TargetedWriter<'a, E> {
+    pub fn push_exclusive(&mut self, target: TargetedId, data: E) {
+        self.events.0.push_exclusive(target.inner(), data);
+    }
+
+    pub fn push_shared(&self, target: TargetedId, data: E) {
+        self.events.0.push_shared(target, data);
+    }
+}

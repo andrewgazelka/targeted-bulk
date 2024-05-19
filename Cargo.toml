@@ -20,5 +20,6 @@ style = "deny"
 suspicious = "deny"
 
 [dev-dependencies]
+derive_more = "0.99.17"
 fastrand = "2.1.0"
 proptest = "1.4.0"
