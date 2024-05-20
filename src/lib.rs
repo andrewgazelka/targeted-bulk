@@ -4,6 +4,7 @@ use std::{
     cell::UnsafeCell,
     fmt::{Debug, Formatter},
     marker::PhantomData,
+    thread::ThreadId,
 };
 
 use evenio::{component::Component, entity::EntityId};
@@ -37,12 +38,13 @@ impl TargetedId {
     }
 }
 
-fn get_thread_index(id: EntityId) -> usize {
+fn get_rayon_thread_index(id: EntityId) -> usize {
     id.index().0 as usize % rayon::current_num_threads()
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LocalEvents<E> {
+    pinned_thread_id: Option<ThreadId>,
     targets: Vec<EntityId>,
     events: Vec<E>,
 }
@@ -51,7 +53,21 @@ impl<E> LocalEvents<E> {
     const EMPTY: Self = Self {
         targets: Vec::new(),
         events: Vec::new(),
+        pinned_thread_id: None,
     };
+
+    /// Assert that the current thread is the same as the one that was pinned to the local events.
+    fn assert_correct_pinned_thread(&mut self) {
+        let current = std::thread::current().id();
+        if let Some(thread_id) = self.pinned_thread_id {
+            assert_eq!(
+                current, thread_id,
+                "current thread id does not match the one that was pinned to the local events"
+            );
+        } else {
+            self.pinned_thread_id = Some(current);
+        }
+    }
 }
 
 #[derive(Debug, Component)]
@@ -71,6 +87,8 @@ impl<E> Default for TargetedEvents<E> {
 impl<E> TargetedEvents<E> {
     #[must_use]
     pub fn new() -> Self {
+        rayon::current_num_threads();
+
         let num_threads = rayon::current_num_threads();
 
         let locals = (0..num_threads)
@@ -97,8 +115,13 @@ impl<E> TargetedEvents<E> {
     }
 
     pub fn push_exclusive(&mut self, target: EntityId, data: E) {
-        let idx = get_thread_index(target);
-        let locals = unsafe { self.locals.get_unchecked_mut(idx) };
+        let idx = get_rayon_thread_index(target);
+
+        let locals = self
+            .locals
+            .get_mut(idx)
+            .expect("thread index out of bounds; did you create multiple rayon ThreadPools?");
+
         let locals = locals.get_mut();
         locals.push(target, data);
     }
@@ -106,25 +129,40 @@ impl<E> TargetedEvents<E> {
     /// # Panics
     /// Panics if the target's assigned thread index does not match the current thread index.
     pub fn push_shared(&self, target: TargetedId, data: E) {
-        let current_thread_index = rayon::current_thread_index().expect("not in a rayon thread");
-        let local = unsafe { self.get_local(current_thread_index) };
+        let local = self.get_current_local();
+        let local = unsafe { &mut *local.get() };
         local.push(target.data, data);
     }
 
-    unsafe fn get_local(&self, index: usize) -> &mut LocalEvents<E> {
-        let local = self.locals.get_unchecked(index);
-        let local = local.get();
-        &mut *local
+    /// # Safety
+    fn get_current_local(&self) -> &UnsafeCell<LocalEvents<E>> {
+        let current_thread_index = rayon::current_thread_index().expect("not in a rayon thread");
+        let local = self.get_local(current_thread_index);
+
+        {
+            let local = unsafe { &mut *local.get() };
+            local.assert_correct_pinned_thread();
+        }
+
+        local
     }
 
+    fn get_local(&self, index: usize) -> &UnsafeCell<LocalEvents<E>> {
+        self.locals
+            .get(index)
+            .expect("thread index out of bounds; did you create multiple rayon ThreadPools?")
+    }
+
+    // this requires a `&mut self` reference for safety
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn drain_par<F>(&mut self, process: F)
     where
         F: Fn(TargetedId, E) + Send + Sync,
         E: Send + Sync,
     {
-        rayon::broadcast(|ctx| {
-            let index = ctx.index();
-            let local = unsafe { self.get_local(index) };
+        rayon::broadcast(|_| {
+            let local = self.get_current_local();
+            let local = unsafe { &mut *local.get() };
 
             let targets = local.targets.drain(..);
             let events = local.events.drain(..);
@@ -147,6 +185,7 @@ impl<E> LocalEvents<E> {
     #[must_use]
     const fn new() -> Self {
         Self {
+            pinned_thread_id: None,
             targets: Vec::new(),
             events: Vec::new(),
         }

@@ -19,6 +19,7 @@ suspicious = { level = "deny", priority = -1 }
 
 non_send_fields_in_send_ty = "allow"
 mut_from_ref = "allow"
+missing_panics_doc = "allow"
 
 [dev-dependencies]
 derive_more = "0.99.17"
