@@ -1,6 +1,7 @@
 #![feature(allocator_api)]
 
 use std::{
+    cell::UnsafeCell,
     fmt::{Debug, Formatter},
     marker::PhantomData,
 };
@@ -53,10 +54,13 @@ impl<E> LocalEvents<E> {
     };
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Component)]
+#[derive(Debug, Component)]
 pub struct TargetedEvents<E> {
-    locals: Box<[LocalEvents<E>]>,
+    locals: Box<[UnsafeCell<LocalEvents<E>>]>,
 }
+
+unsafe impl<E> Send for TargetedEvents<E> {}
+unsafe impl<E> Sync for TargetedEvents<E> {}
 
 impl<E> Default for TargetedEvents<E> {
     fn default() -> Self {
@@ -69,33 +73,48 @@ impl<E> TargetedEvents<E> {
     pub fn new() -> Self {
         let num_threads = rayon::current_num_threads();
 
-        let locals = (0..num_threads).map(|_| LocalEvents::EMPTY).collect();
+        let locals = (0..num_threads)
+            .map(|_| LocalEvents::EMPTY)
+            .map(UnsafeCell::new)
+            .collect();
 
         Self { locals }
     }
 
-    pub fn len(&self) -> usize {
-        self.locals.iter().map(LocalEvents::len).sum()
+    pub fn len(&mut self) -> usize {
+        self.locals
+            .iter_mut()
+            .map(UnsafeCell::get_mut)
+            .map(|local| local.len())
+            .sum()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.locals.iter().all(LocalEvents::is_empty)
+    pub fn is_empty(&mut self) -> bool {
+        self.locals
+            .iter_mut()
+            .map(UnsafeCell::get_mut)
+            .all(|local| local.is_empty())
     }
 
     pub fn push_exclusive(&mut self, target: EntityId, data: E) {
         let idx = get_thread_index(target);
-        self.locals[idx].push(target, data);
+        let locals = unsafe { self.locals.get_unchecked_mut(idx) };
+        let locals = locals.get_mut();
+        locals.push(target, data);
     }
 
     /// # Panics
     /// Panics if the target's assigned thread index does not match the current thread index.
     pub fn push_shared(&self, target: TargetedId, data: E) {
-        let ptr = self.locals.as_ptr();
         let current_thread_index = rayon::current_thread_index().expect("not in a rayon thread");
-        let ptr = unsafe { ptr.add(current_thread_index) };
-        let ptr = ptr.cast_mut();
-        let local = unsafe { &mut *ptr };
+        let local = unsafe { self.get_local(current_thread_index) };
         local.push(target.data, data);
+    }
+
+    unsafe fn get_local(&self, index: usize) -> &mut LocalEvents<E> {
+        let local = self.locals.get_unchecked(index);
+        let local = local.get();
+        &mut *local
     }
 
     pub fn drain_par<F>(&mut self, process: F)
@@ -105,9 +124,7 @@ impl<E> TargetedEvents<E> {
     {
         rayon::broadcast(|ctx| {
             let index = ctx.index();
-            let local = unsafe { self.locals.as_ptr().add(index) };
-            let local = local.cast_mut();
-            let local = unsafe { &mut *local };
+            let local = unsafe { self.get_local(index) };
 
             let targets = local.targets.drain(..);
             let events = local.events.drain(..);

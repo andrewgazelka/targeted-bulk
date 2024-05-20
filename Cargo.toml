@@ -10,14 +10,15 @@ evenio = "0.6.0"
 rayon = "1.10.0"
 
 [lints.clippy]
-complexity = "deny"
-
+complexity = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
 
-pedantic = "deny"
-perf = "deny"
-style = "deny"
-suspicious = "deny"
+non_send_fields_in_send_ty = "allow"
+mut_from_ref = "allow"
 
 [dev-dependencies]
 derive_more = "0.99.17"
