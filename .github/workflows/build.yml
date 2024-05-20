@@ -110,7 +110,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain and cache
+      - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           components: clippy
@@ -123,3 +123,23 @@ jobs:
 
       - name: Clippy check
         run: cargo clippy --workspace --benches --tests --examples --all-features -- -D warnings
+  miri:
+    name: Miri Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Actions Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          components: miri
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Run tests
+        # Pass -Zmiri-ignore-leaks beause it complains about the global rayon threadpool.
+        run: MIRIFLAGS='-Zmiri-tree-borrows -Zmiri-ignore-leaks' cargo miri test --workspace --all-features --all-targets

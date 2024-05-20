@@ -27,7 +27,7 @@ fn quick() {
         events2.push_shared(target, format!("I love {data}"));
     });
 
-    println!("{:#?}", events2);
+    println!("{events2:#?}");
 }
 
 #[derive(Component, Debug)]
