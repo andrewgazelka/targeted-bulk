@@ -52,3 +52,8 @@ impl<'a, E: 'static> TargetedWriter<'a, E> {
         self.events.0.push_shared(target, data);
     }
 }
+
+pub struct BulkFetcher<'a, Q: Query + 'static> {
+    query: Fetcher<'a, Q>,
+}
+
