@@ -29,29 +29,29 @@ impl<T> ThreadPinned<T> {
 
 /// # Safety
 /// Must be a pure function that returns the same value for the same input.
-pub unsafe trait RayonThreadAssignable {
-    fn get_rayon_thread_index(&self) -> usize;
+pub unsafe trait ConsistentKey {
+    fn key(&self) -> usize;
 }
 
-macro_rules! impl_rayon_thread_assignable_for_primitive {
+macro_rules! impl_consistent_key_for_primitive {
     ($($t:ty),*) => {
         $(
             // this is fine, we just want a consistent mapping
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            unsafe impl RayonThreadAssignable for $t {
-                fn get_rayon_thread_index(&self) -> usize {
-                    get_rayon_thread_index(*self as usize)
+            unsafe impl ConsistentKey for $t {
+                fn key(&self) -> usize {
+                    *self as usize
                 }
             }
         )*
     };
 }
 
-impl_rayon_thread_assignable_for_primitive!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
+impl_consistent_key_for_primitive!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
 
-unsafe impl RayonThreadAssignable for EntityId {
-    fn get_rayon_thread_index(&self) -> usize {
-        get_rayon_thread_index(self.index().0 as usize)
+unsafe impl ConsistentKey for EntityId {
+    fn key(&self) -> usize {
+        self.index().0 as usize
     }
 }
 
@@ -133,9 +133,9 @@ impl<E, T> TargetedEvents<E, T> {
 
     pub fn push_exclusive(&mut self, target: T, data: E)
     where
-        T: RayonThreadAssignable,
+        T: ConsistentKey,
     {
-        let idx = target.get_rayon_thread_index();
+        let idx = get_rayon_thread_index(target.key());
 
         let locals = self
             .locals

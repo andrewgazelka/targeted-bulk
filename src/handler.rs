@@ -5,7 +5,7 @@ use evenio::{
     query::Query,
 };
 
-use crate::{RayonThreadAssignable, TargetedEvents, ThreadPinned};
+use crate::{ConsistentKey, TargetedEvents, ThreadPinned};
 
 // todo: can we remove 'static bound?
 // todo: how evenio use TypeId without 'static bound?
@@ -47,7 +47,7 @@ pub struct TargetedWriter<'a, E: 'static, T: 'static = EntityId> {
 impl<'a, E: 'static, T: 'static> TargetedWriter<'a, E, T> {
     pub fn push_exclusive(&mut self, target: T, data: E)
     where
-        T: RayonThreadAssignable,
+        T: ConsistentKey,
     {
         self.events.0.push_exclusive(target, data);
     }
