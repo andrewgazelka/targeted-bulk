@@ -84,6 +84,22 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  deny:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Run cargo deny
+        run: |
+          cargo deny check  -D warnings
+
   clippy:
     runs-on: ubuntu-latest
 
