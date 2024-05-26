@@ -85,6 +85,14 @@ impl<E, T> LocalEvents<E, T> {
             self.pinned_thread_id = Some(current);
         }
     }
+
+    fn clear(&mut self) {
+        self.targets.clear();
+        self.events.clear();
+
+        // todo: do we want to clear the pinned thread id? I could see arguments for and against
+        self.pinned_thread_id = None;
+    }
 }
 
 #[derive(Debug, Component)]
@@ -114,6 +122,13 @@ impl<E, T> TargetedEvents<E, T> {
             .collect();
 
         Self { locals }
+    }
+
+    pub fn clear(&mut self) {
+        self.locals.iter_mut().for_each(|local| {
+            let local = local.get_mut();
+            local.clear();
+        });
     }
 
     pub fn len(&mut self) -> usize {
