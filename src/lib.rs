@@ -146,6 +146,12 @@ impl<E, T> TargetedEvents<E, T> {
             .all(|local| local.is_empty())
     }
 
+    pub fn get_mut_slice(&mut self) -> &mut [LocalEvents<E, T>] {
+        unsafe {
+            std::slice::from_raw_parts_mut(self.locals.as_mut_ptr().cast(), self.locals.len())
+        }
+    }
+
     pub fn push_exclusive(&mut self, target: T, data: E)
     where
         T: ConsistentKey,
