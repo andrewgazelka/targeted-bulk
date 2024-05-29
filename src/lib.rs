@@ -1,6 +1,7 @@
 #![feature(allocator_api)]
+#![feature(thread_id_value)]
 
-use std::{cell::UnsafeCell, fmt::Debug, marker::PhantomData, thread::ThreadId};
+use std::{cell::UnsafeCell, fmt::Debug, marker::PhantomData, sync::atomic::AtomicU64};
 
 use evenio::{component::Component, entity::EntityId};
 
@@ -59,9 +60,9 @@ fn get_rayon_thread_index(id: usize) -> usize {
     id % rayon::current_num_threads()
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug)]
 pub struct LocalEvents<E, T> {
-    pinned_thread_id: Option<ThreadId>,
+    pinned_thread_id: AtomicU64,
     targets: Vec<T>,
     events: Vec<E>,
 }
@@ -70,19 +71,24 @@ impl<E, T> LocalEvents<E, T> {
     const EMPTY: Self = Self {
         targets: Vec::new(),
         events: Vec::new(),
-        pinned_thread_id: None,
+        pinned_thread_id: AtomicU64::new(0),
     };
 
     /// Assert that the current thread is the same as the one that was pinned to the local events.
     fn assert_correct_pinned_thread(&mut self) {
-        let current = std::thread::current().id();
-        if let Some(thread_id) = self.pinned_thread_id {
+        let current = std::thread::current().id().as_u64().get();
+
+        let got = self
+            .pinned_thread_id
+            .swap(current, std::sync::atomic::Ordering::Relaxed);
+
+        // The thread ID is never zero, and we are using zero to represent none,
+        // so if got was zero, that means that it hasn't been pinned yet.
+        if got != current && got != 0 {
             assert_eq!(
-                current, thread_id,
+                current, got,
                 "current thread id does not match the one that was pinned to the local events"
             );
-        } else {
-            self.pinned_thread_id = Some(current);
         }
     }
 
@@ -91,7 +97,7 @@ impl<E, T> LocalEvents<E, T> {
         self.events.clear();
 
         // todo: do we want to clear the pinned thread id? I could see arguments for and against
-        self.pinned_thread_id = None;
+        self.pinned_thread_id = AtomicU64::new(0);
     }
 }
 
@@ -226,7 +232,7 @@ impl<E, T> LocalEvents<E, T> {
     #[must_use]
     const fn new() -> Self {
         Self {
-            pinned_thread_id: None,
+            pinned_thread_id: AtomicU64::new(0),
             targets: Vec::new(),
             events: Vec::new(),
         }
