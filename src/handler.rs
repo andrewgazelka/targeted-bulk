@@ -11,7 +11,7 @@ use crate::{ConsistentKey, TargetedEvents, ThreadPinned};
 // todo: how evenio use TypeId without 'static bound?
 #[derive(HandlerParam)]
 pub struct TargetedReader<'a, E: 'static, Q: Query + 'static, T: 'static = EntityId> {
-    events: Single<'a, &'static mut TargetedEvents<E, T>>,
+    events: Single<&'a mut TargetedEvents<E, T>>,
     query: Fetcher<'a, Q>,
 }
 
@@ -20,11 +20,11 @@ impl<'a, E: 'static, Q: Query + 'static> TargetedReader<'a, E, Q, EntityId> {
     #[allow(clippy::mut_mut)]
     pub fn drain_par<'b, F>(&'b mut self, process: F)
     where
-        F: Fn(ThreadPinned<EntityId>, E, Q::Item<'b>) + Send + Sync,
+        F: Fn(ThreadPinned<EntityId>, E, Q::This<'b>) + Send + Sync,
         E: Send + Sync,
-        Q::Item<'b>: Send + Sync,
+        Q::This<'b>: Send + Sync,
     {
-        let events = &mut self.events.0;
+        let events = &mut self.events;
         let query = &mut self.query;
 
         events.drain_par(|target, data| {
@@ -41,7 +41,7 @@ impl<'a, E: 'static, Q: Query + 'static> TargetedReader<'a, E, Q, EntityId> {
 
 #[derive(HandlerParam)]
 pub struct TargetedWriter<'a, E: 'static, T: 'static = EntityId> {
-    events: Single<'a, &'static mut TargetedEvents<E, T>>,
+    events: Single<&'a mut TargetedEvents<E, T>>,
 }
 
 impl<'a, E: 'static, T: 'static> TargetedWriter<'a, E, T> {
@@ -49,10 +49,10 @@ impl<'a, E: 'static, T: 'static> TargetedWriter<'a, E, T> {
     where
         T: ConsistentKey,
     {
-        self.events.0.push_exclusive(target, data);
+        self.events.push_exclusive(target, data);
     }
 
     pub fn push_shared(&self, target: ThreadPinned<T>, data: E) {
-        self.events.0.push_shared(target, data);
+        self.events.push_shared(target, data);
     }
 }

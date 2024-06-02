@@ -68,13 +68,17 @@ pub struct LocalEvents<E, T> {
 }
 
 impl<E, T> LocalEvents<E, T> {
-    const EMPTY: Self = Self {
-        targets: Vec::new(),
-        events: Vec::new(),
-        pinned_thread_id: AtomicU64::new(0),
-    };
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            targets: Vec::new(),
+            events: Vec::new(),
+            pinned_thread_id: AtomicU64::new(0),
+        }
+    }
 
     /// Assert that the current thread is the same as the one that was pinned to the local events.
+    #[allow(clippy::needless_pass_by_ref_mut)]
     fn assert_correct_pinned_thread(&mut self) {
         let current = std::thread::current().id().as_u64().get();
 
@@ -123,7 +127,7 @@ impl<E, T> TargetedEvents<E, T> {
         let num_threads = rayon::current_num_threads();
 
         let locals = (0..num_threads)
-            .map(|_| LocalEvents::EMPTY)
+            .map(|_| LocalEvents::empty())
             .map(UnsafeCell::new)
             .collect();
 

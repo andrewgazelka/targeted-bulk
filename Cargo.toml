@@ -7,7 +7,7 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-evenio = "0.6.0"
+evenio = { git = "https://github.com/andrewgazelka/evenio", features = ["rayon"], branch = "feat-sender-state-public"}
 rayon = "1.10.0"
 
 [lints.clippy]
